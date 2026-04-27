@@ -5,22 +5,26 @@
 
 use accesskit::{ActionHandler, ActivationHandler, TreeUpdate};
 use objc2::{
-    ClassType, DeclaredClass,
+    AnyThread, DeclaredClass,
     declare::ClassBuilder,
-    declare_class,
+    define_class,
     ffi::{
         OBJC_ASSOCIATION_RETAIN_NONATOMIC, objc_getAssociatedObject, objc_setAssociatedObject,
         object_setClass,
     },
-    msg_send_id,
-    mutability::InteriorMutable,
-    rc::Id,
+    msg_send,
+    rc::Retained,
     runtime::{AnyClass, Sel},
     sel,
 };
 use objc2_app_kit::{NSView, NSWindow};
 use objc2_foundation::{NSArray, NSObject, NSPoint};
-use std::{cell::RefCell, ffi::c_void, sync::Mutex};
+use std::{
+    cell::RefCell,
+    ffi::{CString, c_void},
+    str::FromStr,
+    sync::Mutex,
+};
 
 use crate::{Adapter, event::QueuedEvents};
 
@@ -42,33 +46,25 @@ struct AssociatedObjectIvars {
     prev_class: &'static AnyClass,
 }
 
-declare_class!(
+define_class! {
+    #[unsafe(super(NSObject))]
+    #[ivars = AssociatedObjectIvars]
     struct AssociatedObject;
-
-    unsafe impl ClassType for AssociatedObject {
-        type Super = NSObject;
-        type Mutability = InteriorMutable;
-        const NAME: &'static str = "AccessKitSubclassAssociatedObject";
-    }
-
-    impl DeclaredClass for AssociatedObject {
-        type Ivars = AssociatedObjectIvars;
-    }
-);
+}
 
 impl AssociatedObject {
     fn new(
         adapter: Adapter,
         activation_handler: impl 'static + ActivationHandler,
         prev_class: &'static AnyClass,
-    ) -> Id<Self> {
+    ) -> Retained<Self> {
         let state = RefCell::new(AssociatedObjectState {
             adapter,
             activation_handler: Box::new(activation_handler),
         });
         let this = Self::alloc().set_ivars(AssociatedObjectIvars { state, prev_class });
 
-        unsafe { msg_send_id![super(this), init] }
+        unsafe { msg_send![super(this), init] }
     }
 }
 
@@ -117,8 +113,8 @@ unsafe extern "C" fn hit_test(this: &NSView, _cmd: Sel, point: NSPoint) -> *mut 
 /// Uses dynamic Objective-C subclassing to implement the `NSView`
 /// accessibility methods when normal subclassing isn't an option.
 pub struct SubclassingAdapter {
-    view: Id<NSView>,
-    associated: Id<AssociatedObject>,
+    view: Retained<NSView>,
+    associated: Retained<AssociatedObject>,
 }
 
 impl SubclassingAdapter {
@@ -137,16 +133,16 @@ impl SubclassingAdapter {
         action_handler: impl 'static + ActionHandler,
     ) -> Self {
         let view = view as *mut NSView;
-        let retained_view = unsafe { Id::retain(view) }.unwrap();
+        let retained_view = unsafe { Retained::retain(view) }.unwrap();
         Self::new_internal(retained_view, activation_handler, action_handler)
     }
 
     fn new_internal(
-        retained_view: Id<NSView>,
+        retained_view: Retained<NSView>,
         activation_handler: impl 'static + ActivationHandler,
         action_handler: impl 'static + ActionHandler,
     ) -> Self {
-        let view = Id::as_ptr(&retained_view) as *mut NSView;
+        let view = Retained::as_ptr(&retained_view) as *mut NSView;
         if !unsafe {
             objc_getAssociatedObject(view as *const NSView as *const _, associated_object_key())
         }
@@ -164,7 +160,7 @@ impl SubclassingAdapter {
             objc_setAssociatedObject(
                 view as *mut _,
                 associated_object_key(),
-                Id::as_ptr(&associated) as *mut _,
+                Retained::as_ptr(&associated) as *mut _,
                 OBJC_ASSOCIATION_RETAIN_NONATOMIC,
             )
         };
@@ -172,27 +168,38 @@ impl SubclassingAdapter {
         let subclass = match subclasses.iter().find(|entry| entry.0 == prev_class) {
             Some(entry) => entry.1,
             None => {
-                let name = format!("AccessKitSubclassOf{}", prev_class.name());
-                let mut builder = ClassBuilder::new(&name, prev_class).unwrap();
-                unsafe {
-                    builder.add_method(
-                        sel!(superclass),
-                        superclass as unsafe extern "C" fn(_, _) -> _,
-                    );
-                    builder.add_method(
-                        sel!(accessibilityChildren),
-                        children as unsafe extern "C" fn(_, _) -> _,
-                    );
-                    builder.add_method(
-                        sel!(accessibilityFocusedUIElement),
-                        focus as unsafe extern "C" fn(_, _) -> _,
-                    );
-                    builder.add_method(
-                        sel!(accessibilityHitTest:),
-                        hit_test as unsafe extern "C" fn(_, _, _) -> _,
-                    );
-                }
-                let class = builder.register();
+                let name = CString::from_str(&format!(
+                    "AccessKitSubclassOf{}",
+                    prev_class.name().to_str().unwrap()
+                ))
+                .unwrap();
+                let class = match ClassBuilder::new(&name, prev_class) {
+                    Some(mut builder) => {
+                        unsafe {
+                            builder.add_method(
+                                sel!(superclass),
+                                superclass as unsafe extern "C" fn(_, _) -> _,
+                            );
+                            builder.add_method(
+                                sel!(accessibilityChildren),
+                                children as unsafe extern "C" fn(_, _) -> _,
+                            );
+                            builder.add_method(
+                                sel!(accessibilityFocusedUIElement),
+                                focus as unsafe extern "C" fn(_, _) -> _,
+                            );
+                            builder.add_method(
+                                sel!(accessibilityHitTest:),
+                                hit_test as unsafe extern "C" fn(_, _, _) -> _,
+                            );
+                        }
+                        builder.register()
+                    }
+                    // Class already registered by another copy of this
+                    // library in the same process; reuse it.
+                    None => AnyClass::get(&name)
+                        .expect("ClassBuilder returned None but class not found"),
+                };
                 subclasses.push((prev_class, class));
                 class
             }
@@ -259,7 +266,7 @@ impl SubclassingAdapter {
 impl Drop for SubclassingAdapter {
     fn drop(&mut self) {
         let prev_class = self.associated.ivars().prev_class;
-        let view = Id::as_ptr(&self.view) as *mut NSView;
+        let view = Retained::as_ptr(&self.view) as *mut NSView;
         unsafe { object_setClass(view as *mut _, (prev_class as *const AnyClass).cast()) };
         unsafe {
             objc_setAssociatedObject(
