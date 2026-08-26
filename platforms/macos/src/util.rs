@@ -55,29 +55,31 @@ pub(crate) fn from_ns_point(view: &NSView, node: &Node, point: NSPoint) -> Point
 }
 
 pub(crate) fn to_ns_rect(view: &NSView, rect: Rect) -> NSRect {
-    let window = view.window().unwrap();
-    // AccessKit coordinates are in physical (DPI-dependent)
-    // pixels, but macOS expects logical (DPI-independent)
-    // coordinates here.
-    let factor = window.backingScaleFactor();
-    let rect = NSRect {
-        origin: NSPoint {
-            x: rect.x0 / factor,
-            y: if view.isFlipped() {
-                rect.y0 / factor
-            } else {
-                let view_bounds = view.bounds();
-                view_bounds.size.height - rect.y1 / factor
+    if let Some(window) = view.window() {
+        // AccessKit coordinates are in physical (DPI-dependent)
+        // pixels, but macOS expects logical (DPI-independent)
+        // coordinates here.
+        let factor = window.backingScaleFactor();
+        let rect = NSRect {
+            origin: NSPoint {
+                x: rect.x0 / factor,
+                y: if view.isFlipped() {
+                    rect.y0 / factor
+                } else {
+                    let view_bounds = view.bounds();
+                    view_bounds.size.height - rect.y1 / factor
+                },
             },
-        },
-        size: NSSize {
-            width: rect.width() / factor,
-            height: rect.height() / factor,
-        },
-    };
-    let rect = view.convertRect_toView(rect, None);
-    let window = view.window().unwrap();
-    window.convertRectToScreen(rect)
+            size: NSSize {
+                width: rect.width() / factor,
+                height: rect.height() / factor,
+            },
+        };
+        let rect = view.convertRect_toView(rect, None);
+        window.convertRectToScreen(rect)
+    } else {
+        NSRect::ZERO
+    }
 }
 
 fn color_channel_to_f64(channel: u8) -> f64 {
