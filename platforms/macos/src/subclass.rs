@@ -110,6 +110,16 @@ unsafe extern "C" fn hit_test(this: &NSView, _cmd: Sel, point: NSPoint) -> *mut 
         .hit_test(point, &mut *state_mut.activation_handler)
 }
 
+pub fn add_random_suffix(base_name: &String) -> std::ffi::CString {
+    use std::collections::hash_map::RandomState;
+    use std::ffi::CString;
+    use std::hash::{BuildHasher, Hasher};
+
+    let suffix = RandomState::new().build_hasher().finish();
+    let name = format!("{base_name}_{suffix:016x}");
+    CString::new(name).expect("class name contains no NUL bytes")
+}
+
 /// Uses dynamic Objective-C subclassing to implement the `NSView`
 /// accessibility methods when normal subclassing isn't an option.
 pub struct SubclassingAdapter {
@@ -168,11 +178,10 @@ impl SubclassingAdapter {
         let subclass = match subclasses.iter().find(|entry| entry.0 == prev_class) {
             Some(entry) => entry.1,
             None => {
-                let name = CString::from_str(&format!(
+                let name = add_random_suffix(&format!(
                     "AccessKitSubclassOf{}",
                     prev_class.name().to_str().unwrap()
-                ))
-                .unwrap();
+                ));
                 let class = match ClassBuilder::new(&name, prev_class) {
                     Some(mut builder) => {
                         unsafe {
