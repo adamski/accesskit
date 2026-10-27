@@ -18,7 +18,7 @@ default-target = "x86_64-apple-darwin"
 accesskit = { version = "0.24.0", path = "../../common" }
 accesskit_consumer = { version = "0.35.0", path = "../../consumer" }
 hashbrown.workspace = true
-objc2 = "0.6.4"
+objc2 = { version = "0.6.4", features = ["unique-class-names"] }
 objc2-foundation = { version = "0.3.2", features = [
     "NSArray",
     "NSDictionary",
