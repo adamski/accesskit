@@ -22,7 +22,6 @@ use objc2_foundation::{NSArray, NSObject, NSPoint};
 use std::{
     cell::RefCell,
     ffi::{CString, c_void},
-    str::FromStr,
     sync::Mutex,
 };
 
@@ -168,10 +167,11 @@ impl SubclassingAdapter {
         let subclass = match subclasses.iter().find(|entry| entry.0 == prev_class) {
             Some(entry) => entry.1,
             None => {
-                let name = add_random_suffix(&format!(
+                let name = CString::new(format!(
                     "AccessKitSubclassOf{}",
                     prev_class.name().to_str().unwrap()
-                ));
+                ))
+                .expect("Failed to create class name");
                 let class = match ClassBuilder::new_unique(&name, prev_class) {
                     Some(mut builder) => {
                         unsafe {
