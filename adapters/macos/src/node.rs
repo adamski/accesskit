@@ -391,7 +391,6 @@ define_class!(
 
     #[derive(Debug)]
     #[ivars = PlatformNodeIvars]
-    #[name = "AccessKitNode"]
     pub(crate) struct PlatformNode;
 
     impl PlatformNode {

@@ -5,7 +5,10 @@
 
 use std::{cell::Cell, rc::Rc};
 
-use accesskit::{ActionHandler, ActionRequest, ActivationHandler, TreeUpdate};
+use accesskit::{
+    ActionHandler, ActionRequest, ActivationHandler, Node, NodeId, Role, TreeId, TreeInfo,
+    TreeUpdate,
+};
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{class, msg_send};
@@ -29,6 +32,19 @@ impl ActivationHandler for NoTree {
 impl Drop for NoTree {
     fn drop(&mut self) {
         self.0.dropped.set(true);
+    }
+}
+
+pub struct WindowTree;
+
+impl ActivationHandler for WindowTree {
+    fn request_initial_tree(&mut self) -> Option<TreeUpdate> {
+        Some(TreeUpdate {
+            nodes: vec![(NodeId(0), Node::new(Role::Window))],
+            tree: Some(TreeInfo::new(NodeId(0))),
+            tree_id: TreeId::ROOT,
+            focus: NodeId(0),
+        })
     }
 }
 

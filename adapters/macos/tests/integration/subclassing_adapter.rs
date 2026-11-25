@@ -28,6 +28,7 @@ pub const TESTS: &[Test] = tests![
     observers_can_be_removed_after_dropping,
     an_observed_view_can_get_a_new_adapter,
     a_view_observed_before_the_adapter_is_rejected,
+    platform_nodes_have_unique_class_names,
 ];
 
 fn adapter_for(view: &NSView) -> (SubclassingAdapter, Rc<HandlerEvents>) {
@@ -176,4 +177,29 @@ fn a_view_observed_before_the_adapter_is_rejected() {
     stop_observing(&view, observation);
     assert_eq!(class_name(&view), "NSView");
     query_accessibility_without_adapter(&view);
+}
+
+fn platform_nodes_have_unique_class_names() {
+    let view = new_view();
+    let _adapter = unsafe {
+        SubclassingAdapter::new(
+            &*view as *const NSView as *mut c_void,
+            WindowTree,
+            NoActions,
+        )
+    };
+    let children: Retained<NSArray<NSObject>> = unsafe { msg_send![&*view, accessibilityChildren] };
+    assert_eq!(children.count(), 1);
+    let node: &AnyObject = &children.objectAtIndex(0);
+    let name = node.class().name().to_str().unwrap();
+    let (base, suffix) = name.rsplit_once('_').unwrap();
+    assert_eq!(
+        base,
+        concat!(
+            "accesskit_macos::node::PlatformNode",
+            env!("CARGO_PKG_VERSION")
+        )
+    );
+    assert_eq!(suffix.len(), 16, "{name}");
+    assert!(suffix.bytes().all(|b| b.is_ascii_hexdigit()), "{name}");
 }
