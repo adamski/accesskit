@@ -33,3 +33,8 @@ hashbrown = { version = "0.17", default-features = false, features = ["default-h
 lto = true
 opt-level = "z"
 codegen-units = 1
+
+# Not for upstream: objc2 0.6.5 with the `unique-class-names` feature, until
+# objc2 releases it.
+[patch.crates-io]
+objc2 = { git = "https://github.com/adamski/objc2", branch = "unique-class-names-0.6.5" }
