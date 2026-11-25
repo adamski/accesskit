@@ -55,7 +55,9 @@ pub(crate) fn from_ns_point(view: &NSView, node: &NodeRef, point: NSPoint) -> Po
 }
 
 pub(crate) fn to_ns_rect(view: &NSView, rect: Rect) -> NSRect {
-    let window = view.window().unwrap();
+    let Some(window) = view.window() else {
+        return NSRect::ZERO;
+    };
     // AccessKit coordinates are in physical (DPI-dependent)
     // pixels, but macOS expects logical (DPI-independent)
     // coordinates here.
@@ -76,7 +78,6 @@ pub(crate) fn to_ns_rect(view: &NSView, rect: Rect) -> NSRect {
         },
     };
     let rect = view.convertRect_toView(rect, None);
-    let window = view.window().unwrap();
     window.convertRectToScreen(rect)
 }
 
