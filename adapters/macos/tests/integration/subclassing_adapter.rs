@@ -14,7 +14,7 @@ use objc2::msg_send;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject};
 use objc2_app_kit::NSView;
-use objc2_foundation::{NSArray, NSObject, NSPoint, NSString};
+use objc2_foundation::{NSArray, NSObject, NSPoint, NSRect, NSString};
 
 use crate::harness::{Test, tests};
 use crate::util::*;
@@ -29,6 +29,7 @@ pub const TESTS: &[Test] = tests![
     an_observed_view_can_get_a_new_adapter,
     a_view_observed_before_the_adapter_is_rejected,
     platform_nodes_have_unique_class_names,
+    queries_without_a_window_do_not_panic,
 ];
 
 fn adapter_for(view: &NSView) -> (SubclassingAdapter, Rc<HandlerEvents>) {
@@ -179,18 +180,20 @@ fn a_view_observed_before_the_adapter_is_rejected() {
     query_accessibility_without_adapter(&view);
 }
 
+fn adapter_with_tree(view: &NSView) -> SubclassingAdapter {
+    unsafe { SubclassingAdapter::new(view as *const NSView as *mut c_void, WindowTree, NoActions) }
+}
+
+fn root_platform_node(view: &NSView) -> Retained<NSObject> {
+    let children: Retained<NSArray<NSObject>> = unsafe { msg_send![view, accessibilityChildren] };
+    assert_eq!(children.count(), 1);
+    children.objectAtIndex(0)
+}
+
 fn platform_nodes_have_unique_class_names() {
     let view = new_view();
-    let _adapter = unsafe {
-        SubclassingAdapter::new(
-            &*view as *const NSView as *mut c_void,
-            WindowTree,
-            NoActions,
-        )
-    };
-    let children: Retained<NSArray<NSObject>> = unsafe { msg_send![&*view, accessibilityChildren] };
-    assert_eq!(children.count(), 1);
-    let node: &AnyObject = &children.objectAtIndex(0);
+    let _adapter = adapter_with_tree(&view);
+    let node: &AnyObject = &root_platform_node(&view);
     let name = node.class().name().to_str().unwrap();
     let (base, suffix) = name.rsplit_once('_').unwrap();
     assert_eq!(
@@ -202,4 +205,14 @@ fn platform_nodes_have_unique_class_names() {
     );
     assert_eq!(suffix.len(), 16, "{name}");
     assert!(suffix.bytes().all(|b| b.is_ascii_hexdigit()), "{name}");
+}
+
+fn queries_without_a_window_do_not_panic() {
+    let view = new_view();
+    let _adapter = adapter_with_tree(&view);
+    let hit: *mut AnyObject =
+        unsafe { msg_send![&*view, accessibilityHitTest: NSPoint::new(1., 1.)] };
+    assert!(hit.is_null());
+    let frame: NSRect = unsafe { msg_send![&*root_platform_node(&view), accessibilityFrame] };
+    assert_eq!(frame, NSRect::ZERO);
 }

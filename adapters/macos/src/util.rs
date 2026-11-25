@@ -14,8 +14,8 @@ pub(crate) fn from_ns_range<'a>(node: &'a NodeRef<'a>, ns_range: NSRange) -> Opt
     let pos = node.text_position_from_global_utf16_index(ns_range.location)?;
     let mut range = pos.to_degenerate_range();
     if ns_range.length > 0 {
-        let end =
-            node.text_position_from_global_utf16_index(ns_range.location + ns_range.length)?;
+        let end = ns_range.location.checked_add(ns_range.length)?;
+        let end = node.text_position_from_global_utf16_index(end)?;
         range.set_end(end);
     }
     Some(range)
@@ -35,8 +35,8 @@ pub(crate) fn to_ns_range_for_character(pos: &TextPosition) -> NSRange {
     to_ns_range(&range)
 }
 
-pub(crate) fn from_ns_point(view: &NSView, node: &NodeRef, point: NSPoint) -> Point {
-    let window = view.window().unwrap();
+pub(crate) fn from_ns_point(view: &NSView, node: &NodeRef, point: NSPoint) -> Option<Point> {
+    let window = view.window()?;
     let point = window.convertPointFromScreen(point);
     let point = view.convertPoint_fromView(point, None);
     // AccessKit coordinates are in physical (DPI-dependent) pixels, but
@@ -51,7 +51,7 @@ pub(crate) fn from_ns_point(view: &NSView, node: &NodeRef, point: NSPoint) -> Po
             (view_bounds.size.height - point.y) * factor
         },
     );
-    node.transform().inverse() * point
+    Some(node.transform().inverse() * point)
 }
 
 pub(crate) fn to_ns_rect(view: &NSView, rect: Rect) -> NSRect {

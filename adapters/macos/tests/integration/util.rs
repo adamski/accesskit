@@ -6,7 +6,7 @@
 use std::{cell::Cell, rc::Rc};
 
 use accesskit::{
-    ActionHandler, ActionRequest, ActivationHandler, Node, NodeId, Role, TreeId, TreeInfo,
+    ActionHandler, ActionRequest, ActivationHandler, Node, NodeId, Rect, Role, TreeId, TreeInfo,
     TreeUpdate,
 };
 use objc2::rc::Retained;
@@ -39,8 +39,10 @@ pub struct WindowTree;
 
 impl ActivationHandler for WindowTree {
     fn request_initial_tree(&mut self) -> Option<TreeUpdate> {
+        let mut window = Node::new(Role::Window);
+        window.set_bounds(Rect::new(0.0, 0.0, 100.0, 100.0));
         Some(TreeUpdate {
-            nodes: vec![(NodeId(0), Node::new(Role::Window))],
+            nodes: vec![(NodeId(0), window)],
             tree: Some(TreeInfo::new(NodeId(0))),
             tree_id: TreeId::ROOT,
             focus: NodeId(0),

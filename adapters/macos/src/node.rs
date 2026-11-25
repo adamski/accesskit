@@ -814,9 +814,10 @@ define_class!(
                 };
 
                 if node.supports_text_ranges() {
-                    let point = from_ns_point(&view, node, point);
-                    let pos = node.text_position_at_point(point);
-                    return to_ns_range_for_character(&pos);
+                    if let Some(point) = from_ns_point(&view, node, point) {
+                        let pos = node.text_position_at_point(point);
+                        return to_ns_range_for_character(&pos);
+                    }
                 }
                 NSRange::new(0, 0)
             })
