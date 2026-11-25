@@ -154,7 +154,7 @@ fn subclass_of(prev_class: &'static AnyClass) -> &'static AnyClass {
             let mut name = b"AccessKitSubclassOf".to_vec();
             name.extend_from_slice(prev_class.name().to_bytes());
             let name = CString::new(name).unwrap();
-            let mut builder = ClassBuilder::new(&name, prev_class).unwrap();
+            let mut builder = ClassBuilder::new_unique(&name, prev_class).unwrap();
             unsafe {
                 builder.add_method(
                     sel!(superclass),

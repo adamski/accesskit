@@ -43,7 +43,21 @@ pub fn new_view() -> Retained<NSView> {
 }
 
 // KVO overrides the `class` method to hide its own subclass.
-pub fn class_name(view: &NSView) -> String {
+pub fn raw_class_name(view: &NSView) -> String {
     let object: &AnyObject = view;
     object.class().name().to_string_lossy().into_owned()
+}
+
+/// The class name without the random `_<16 hex digits>` suffix that
+/// makes our subclass names unique.
+pub fn class_name(view: &NSView) -> String {
+    let name = raw_class_name(view);
+    match name.rsplit_once('_') {
+        Some((base, suffix))
+            if suffix.len() == 16 && suffix.bytes().all(|b| b.is_ascii_hexdigit()) =>
+        {
+            base.to_owned()
+        }
+        _ => name,
+    }
 }

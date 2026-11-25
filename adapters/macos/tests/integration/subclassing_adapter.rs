@@ -82,6 +82,7 @@ fn the_view_is_subclassed() {
     let view = new_view();
     let (_adapter, _) = adapter_for(&view);
     assert_eq!(class_name(&view), "AccessKitSubclassOfNSView");
+    assert_ne!(raw_class_name(&view), "AccessKitSubclassOfNSView");
 }
 
 fn querying_the_view_requests_the_tree() {
