@@ -6,9 +6,9 @@
 use std::{cell::Cell, rc::Rc};
 
 use accesskit::{ActionHandler, ActionRequest, ActivationHandler, TreeUpdate};
-use objc2::rc::Id;
+use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
-use objc2::{class, msg_send_id};
+use objc2::{class, msg_send};
 use objc2_app_kit::NSView;
 
 #[derive(Default)]
@@ -38,12 +38,12 @@ impl ActionHandler for NoActions {
     fn do_action(&mut self, _request: ActionRequest) {}
 }
 
-pub fn new_view() -> Id<NSView> {
-    unsafe { msg_send_id![class!(NSView), new] }
+pub fn new_view() -> Retained<NSView> {
+    unsafe { msg_send![class!(NSView), new] }
 }
 
 // KVO overrides the `class` method to hide its own subclass.
 pub fn class_name(view: &NSView) -> String {
     let object: &AnyObject = view;
-    object.class().name().to_owned()
+    object.class().name().to_string_lossy().into_owned()
 }

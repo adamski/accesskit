@@ -11,11 +11,11 @@ use std::{
 };
 
 use accesskit_ios::SubclassingAdapter;
-use objc2::declare::ClassBuilder;
 use objc2::rc::Retained;
+use objc2::runtime::ClassBuilder;
 use objc2::runtime::{AnyClass, AnyObject, Bool, Sel};
-use objc2::{class, msg_send, msg_send_id, sel};
-use objc2_foundation::{CGPoint, NSArray, NSObject, NSString};
+use objc2::{class, msg_send, sel};
+use objc2_foundation::{NSArray, NSObject, NSPoint, NSString};
 use objc2_ui_kit::UIView;
 
 use crate::harness::{Test, tests};
@@ -54,10 +54,10 @@ fn query_accessibility(view: &UIView) {
         unsafe { msg_send![view, respondsToSelector: sel!(accessibilityHitTest:)] };
     if responds.as_bool() {
         let _: *mut AnyObject =
-            unsafe { msg_send![view, accessibilityHitTest: CGPoint::new(0., 0.)] };
+            unsafe { msg_send![view, accessibilityHitTest: NSPoint::new(0., 0.)] };
     }
     let superclass: &AnyClass = unsafe { msg_send![view, superclass] };
-    assert_eq!(superclass.name(), "UIResponder");
+    assert_eq!(superclass.name(), c"UIResponder");
 }
 
 fn query_accessibility_without_adapter(view: &UIView) {
@@ -96,8 +96,8 @@ extern "C" fn record_did_move_to_window(_this: &UIView, _cmd: Sel) {
 }
 
 fn new_recording_view() -> Retained<UIView> {
-    let class = AnyClass::get("AccessKitTestRecordingView").unwrap_or_else(|| {
-        let mut builder = ClassBuilder::new("AccessKitTestRecordingView", class!(UIView)).unwrap();
+    let class = AnyClass::get(c"AccessKitTestRecordingView").unwrap_or_else(|| {
+        let mut builder = ClassBuilder::new(c"AccessKitTestRecordingView", class!(UIView)).unwrap();
         unsafe {
             builder.add_method(
                 sel!(didMoveToWindow),
@@ -106,7 +106,7 @@ fn new_recording_view() -> Retained<UIView> {
         };
         builder.register()
     });
-    unsafe { msg_send_id![class, new] }
+    unsafe { msg_send![class, new] }
 }
 
 fn the_view_is_subclassed() {

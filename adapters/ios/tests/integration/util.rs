@@ -8,7 +8,7 @@ use std::{cell::Cell, rc::Rc};
 use accesskit::{ActionHandler, ActionRequest, ActivationHandler, DeactivationHandler, TreeUpdate};
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
-use objc2::{class, msg_send_id};
+use objc2::{class, msg_send};
 use objc2_ui_kit::UIView;
 
 #[derive(Default)]
@@ -45,11 +45,11 @@ impl DeactivationHandler for NoDeactivation {
 }
 
 pub fn new_view() -> Retained<UIView> {
-    unsafe { msg_send_id![class!(UIView), new] }
+    unsafe { msg_send![class!(UIView), new] }
 }
 
 // KVO overrides the `class` method to hide its own subclass.
 pub fn class_name(view: &UIView) -> String {
     let object: &AnyObject = view;
-    object.class().name().to_owned()
+    object.class().name().to_string_lossy().into_owned()
 }

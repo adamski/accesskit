@@ -11,7 +11,7 @@ use std::{
 
 use accesskit_macos::SubclassingAdapter;
 use objc2::msg_send;
-use objc2::rc::Id;
+use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject};
 use objc2_app_kit::NSView;
 use objc2_foundation::{NSArray, NSObject, NSPoint, NSString};
@@ -46,7 +46,7 @@ fn query_accessibility(view: &NSView) {
     let _: *mut NSArray<NSObject> = unsafe { msg_send![view, accessibilityChildren] };
     let _: *mut AnyObject = unsafe { msg_send![view, accessibilityFocusedUIElement] };
     let superclass: &AnyClass = unsafe { msg_send![view, superclass] };
-    assert_eq!(superclass.name(), "NSResponder");
+    assert_eq!(superclass.name(), c"NSResponder");
 }
 
 // The adapter can only hit test a view that is in a window, but the
@@ -57,8 +57,8 @@ fn query_accessibility_without_adapter(view: &NSView) {
 }
 
 struct Observation {
-    observer: Id<NSObject>,
-    key_path: Id<NSString>,
+    observer: Retained<NSObject>,
+    key_path: Retained<NSString>,
 }
 
 // AppKit observes the first responder this way.

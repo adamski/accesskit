@@ -4,31 +4,26 @@ use accesskit::{
 use accesskit_ios::Adapter;
 use example_common::UiState;
 use objc2::{
-    ClassType, DeclaredClass, declare_class, msg_send, msg_send_id,
-    mutability::MainThreadOnly,
-    rc::{Allocated, Retained, WeakId},
+    ClassType, DefinedClass, MainThreadOnly, define_class, msg_send,
+    rc::{Allocated, Retained, Weak},
     runtime::{AnyObject, Bool, NSObjectProtocol, Sel},
     sel,
 };
 use objc2_foundation::{
-    CGPoint, CGRect, MainThreadMarker, NSArray, NSCopying, NSDictionary, NSObject,
+    MainThreadMarker, NSArray, NSCopying, NSDictionary, NSObject, NSPoint, NSRect,
     NSRunLoopCommonModes, NSString,
 };
 use objc2_ui_kit::{
-    UIApplication, UIApplicationDelegate, UIApplicationLaunchOptionsKey, UIApplicationMain,
-    UIColor, UIResponder, UIScene, UISceneConnectionOptions, UISceneDelegate, UISceneSession,
-    UIView, UIViewAutoresizing, UIViewController, UIWindow, UIWindowScene, UIWindowSceneDelegate,
+    UIApplication, UIApplicationDelegate, UIApplicationLaunchOptionsKey, UIColor, UIResponder,
+    UIScene, UISceneConnectionOptions, UISceneDelegate, UISceneSession, UIView, UIViewAutoresizing,
+    UIViewController, UIWindow, UIWindowScene, UIWindowSceneDelegate,
 };
-use std::{
-    cell::RefCell,
-    ffi::{CString, c_char, c_int, c_void},
-    ptr::{NonNull, null_mut},
-};
+use std::{cell::RefCell, ffi::c_void, ptr::null_mut};
 
 // The handlers only hold weak references to the view, which owns the adapter,
 // which owns the handlers.
 struct ShowcaseActivationHandler {
-    view: WeakId<ContentView>,
+    view: Weak<ContentView>,
 }
 
 impl ActivationHandler for ShowcaseActivationHandler {
@@ -40,7 +35,7 @@ impl ActivationHandler for ShowcaseActivationHandler {
 }
 
 struct ShowcaseActionHandler {
-    view: WeakId<ContentView>,
+    view: Weak<ContentView>,
 }
 
 impl ActionHandler for ShowcaseActionHandler {
@@ -61,7 +56,7 @@ impl ActionHandler for ShowcaseActionHandler {
 }
 
 struct ShowcaseDeactivationHandler {
-    view: WeakId<ContentView>,
+    view: Weak<ContentView>,
 }
 
 impl DeactivationHandler for ShowcaseDeactivationHandler {
@@ -79,21 +74,15 @@ struct ContentViewIvars {
     pending_actions: RefCell<Vec<ActionRequest>>,
 }
 
-declare_class!(
+define_class!(
+    #[unsafe(super(UIView, UIResponder, NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "AccessKitExampleContentView"]
+    #[ivars = ContentViewIvars]
     struct ContentView;
 
-    unsafe impl ClassType for ContentView {
-        type Super = UIView;
-        type Mutability = MainThreadOnly;
-        const NAME: &'static str = "AccessKitExampleContentView";
-    }
-
-    impl DeclaredClass for ContentView {
-        type Ivars = ContentViewIvars;
-    }
-
-    unsafe impl ContentView {
-        #[method(isAccessibilityElement)]
+    impl ContentView {
+        #[unsafe(method(isAccessibilityElement))]
         fn is_accessibility_element(&self) -> Bool {
             match &*self.ivars().adapter.borrow() {
                 Some(adapter) => Bool::new(adapter.is_accessibility_element()),
@@ -101,7 +90,7 @@ declare_class!(
             }
         }
 
-        #[method(accessibilityElements)]
+        #[unsafe(method(accessibilityElements))]
         fn accessibility_elements(&self) -> *mut NSArray<NSObject> {
             match &*self.ivars().adapter.borrow() {
                 Some(adapter) => adapter.accessibility_elements(),
@@ -109,15 +98,15 @@ declare_class!(
             }
         }
 
-        #[method(accessibilityHitTest:)]
-        fn accessibility_hit_test(&self, point: CGPoint) -> *mut NSObject {
+        #[unsafe(method(accessibilityHitTest:))]
+        fn accessibility_hit_test(&self, point: NSPoint) -> *mut NSObject {
             match &*self.ivars().adapter.borrow() {
                 Some(adapter) => adapter.hit_test(point),
                 None => null_mut(),
             }
         }
 
-        #[method(didMoveToWindow)]
+        #[unsafe(method(didMoveToWindow))]
         fn did_move_to_window(&self) {
             unsafe {
                 let _: () = msg_send![super(self), didMoveToWindow];
@@ -134,7 +123,7 @@ declare_class!(
             }
         }
 
-        #[method(layoutSubviews)]
+        #[unsafe(method(layoutSubviews))]
         fn layout_subviews(&self) {
             unsafe {
                 let _: () = msg_send![super(self), layoutSubviews];
@@ -144,7 +133,7 @@ declare_class!(
             }
         }
 
-        #[method(processPendingActions)]
+        #[unsafe(method(processPendingActions))]
         fn process_pending_actions(&self) {
             let requests = self.ivars().pending_actions.take();
             {
@@ -156,7 +145,7 @@ declare_class!(
             self.after_input();
         }
 
-        #[method(processDueMessages)]
+        #[unsafe(method(processDueMessages))]
         fn process_due_messages(&self) {
             let processed = self.ivars().ui.borrow_mut().process_due_messages();
             if processed {
@@ -168,22 +157,20 @@ declare_class!(
 );
 
 impl ContentView {
-    fn new(mtm: MainThreadMarker, frame: CGRect) -> Retained<Self> {
+    fn new(mtm: MainThreadMarker, frame: NSRect) -> Retained<Self> {
         let this = mtm.alloc::<Self>().set_ivars(ContentViewIvars {
             adapter: RefCell::new(None),
             ui: RefCell::new(UiState::new()),
             pending_actions: RefCell::new(Vec::new()),
         });
-        let this: Retained<Self> = unsafe { msg_send_id![super(this), initWithFrame: frame] };
+        let this: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: frame] };
 
-        unsafe {
-            this.setBackgroundColor(Some(&UIColor::darkGrayColor()));
-            this.setAutoresizingMask(
-                UIViewAutoresizing::FlexibleWidth | UIViewAutoresizing::FlexibleHeight,
-            );
-        }
+        this.setBackgroundColor(Some(&UIColor::darkGrayColor()));
+        this.setAutoresizingMask(
+            UIViewAutoresizing::FlexibleWidth | UIViewAutoresizing::FlexibleHeight,
+        );
 
-        let weak = WeakId::from_retained(&this);
+        let weak = Weak::from_retained(&this);
         // SAFETY: `this` is a valid, retained `UIView`, and it outlives the
         // adapter, which is owned by the view itself.
         let adapter = unsafe {
@@ -252,7 +239,7 @@ impl ContentView {
     }
 
     fn perform_after_delay(&self, selector: Sel, delay: f64) {
-        let modes = NSArray::from_vec(vec![unsafe { NSRunLoopCommonModes }.copy()]);
+        let modes = NSArray::from_retained_slice(&[unsafe { NSRunLoopCommonModes }.copy()]);
         unsafe {
             let _: () = msg_send![
                 self,
@@ -265,24 +252,17 @@ impl ContentView {
     }
 }
 
-declare_class!(
+define_class!(
+    #[unsafe(super(UIResponder, NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "AccessKitExampleAppDelegate"]
     struct AppDelegate;
-
-    unsafe impl ClassType for AppDelegate {
-        type Super = UIResponder;
-        type Mutability = MainThreadOnly;
-        const NAME: &'static str = "AccessKitExampleAppDelegate";
-    }
-
-    impl DeclaredClass for AppDelegate {
-        type Ivars = ();
-    }
 
     unsafe impl NSObjectProtocol for AppDelegate {}
 
     // The scene delegate, which the Info.plist names, sets up the window.
     unsafe impl UIApplicationDelegate for AppDelegate {
-        #[method(application:didFinishLaunchingWithOptions:)]
+        #[unsafe(method(application:didFinishLaunchingWithOptions:))]
         fn did_finish_launching(
             &self,
             _application: &UIApplication,
@@ -297,34 +277,28 @@ struct SceneDelegateIvars {
     window: RefCell<Option<Retained<UIWindow>>>,
 }
 
-declare_class!(
+define_class!(
+    #[unsafe(super(UIResponder, NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "AccessKitExampleSceneDelegate"]
+    #[ivars = SceneDelegateIvars]
     struct SceneDelegate;
 
-    unsafe impl ClassType for SceneDelegate {
-        type Super = UIResponder;
-        type Mutability = MainThreadOnly;
-        const NAME: &'static str = "AccessKitExampleSceneDelegate";
-    }
-
-    impl DeclaredClass for SceneDelegate {
-        type Ivars = SceneDelegateIvars;
-    }
-
-    unsafe impl SceneDelegate {
+    impl SceneDelegate {
         // UIKit creates the scene delegate.
-        #[method_id(init)]
+        #[unsafe(method_id(init))]
         fn init(this: Allocated<Self>) -> Option<Retained<Self>> {
             let this = this.set_ivars(SceneDelegateIvars {
                 window: RefCell::new(None),
             });
-            unsafe { msg_send_id![super(this), init] }
+            unsafe { msg_send![super(this), init] }
         }
     }
 
     unsafe impl NSObjectProtocol for SceneDelegate {}
 
     unsafe impl UISceneDelegate for SceneDelegate {
-        #[method(scene:willConnectToSession:options:)]
+        #[unsafe(method(scene:willConnectToSession:options:))]
         fn scene_will_connect(
             &self,
             scene: &UIScene,
@@ -339,14 +313,14 @@ declare_class!(
             let window_scene =
                 unsafe { &*(scene as *const UIScene as *const UIWindowScene) };
 
-            let window = unsafe { UIWindow::initWithWindowScene(mtm.alloc(), window_scene) };
-            let view_controller = unsafe { UIViewController::init(mtm.alloc()) };
+            let window = UIWindow::initWithWindowScene(mtm.alloc(), window_scene);
+            let view_controller = UIViewController::init(mtm.alloc());
             window.setRootViewController(Some(&view_controller));
             window.makeKeyAndVisible();
 
             let root_view = view_controller.view().expect("view controller has no view");
             let content_view = ContentView::new(mtm, root_view.bounds());
-            unsafe { root_view.addSubview(&content_view) };
+            root_view.addSubview(&content_view);
 
             *self.ivars().window.borrow_mut() = Some(window);
         }
@@ -356,26 +330,10 @@ declare_class!(
 );
 
 fn main() {
+    let mtm = MainThreadMarker::new().unwrap();
     // UIKit looks the delegate classes up by name, so they must be registered
     // first.
-    let delegate_class_name = NSString::from_str(AppDelegate::class().name());
+    let delegate_class_name = NSString::from_class(AppDelegate::class());
     let _ = SceneDelegate::class();
-
-    let args = std::env::args()
-        .map(|arg| CString::new(arg).unwrap())
-        .collect::<Vec<_>>();
-    let mut argv = args
-        .iter()
-        .map(|arg| arg.as_ptr() as *mut c_char)
-        .collect::<Vec<_>>();
-    argv.push(null_mut());
-
-    unsafe {
-        UIApplicationMain(
-            args.len() as c_int,
-            NonNull::new(argv.as_mut_ptr()).unwrap(),
-            None,
-            Some(&delegate_class_name),
-        );
-    }
+    UIApplication::main(None, Some(&delegate_class_name), mtm);
 }

@@ -5,22 +5,23 @@
 
 use accesskit::{ActionHandler, ActivationHandler, DeactivationHandler, TreeUpdate};
 use objc2::{
-    ClassType, DeclaredClass,
-    declare::ClassBuilder,
-    declare_class,
+    DefinedClass, MainThreadOnly, define_class,
     ffi::{
         OBJC_ASSOCIATION_RETAIN_NONATOMIC, objc_getAssociatedObject, objc_setAssociatedObject,
         object_setClass,
     },
-    msg_send, msg_send_id,
-    mutability::MainThreadOnly,
+    msg_send,
     rc::Retained,
-    runtime::{AnyClass, AnyObject, Bool, Sel},
+    runtime::{AnyClass, AnyObject, Bool, ClassBuilder, Sel},
     sel,
 };
-use objc2_foundation::{CGPoint, MainThreadMarker, NSArray, NSObject};
+use objc2_foundation::{MainThreadMarker, NSArray, NSObject, NSPoint};
 use objc2_ui_kit::{UIView, UIWindow};
-use std::{ffi::c_void, ptr::null_mut, sync::Mutex};
+use std::{
+    ffi::{CString, c_void},
+    ptr::null_mut,
+    sync::Mutex,
+};
 
 use crate::{Adapter, event::QueuedEvents};
 
@@ -37,18 +38,12 @@ struct AssociatedObjectIvars {
     prev_class: &'static AnyClass,
 }
 
-declare_class!(
+define_class!(
+    #[unsafe(super(NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "AccessKitSubclassAssociatedObject"]
+    #[ivars = AssociatedObjectIvars]
     struct AssociatedObject;
-
-    unsafe impl ClassType for AssociatedObject {
-        type Super = NSObject;
-        type Mutability = MainThreadOnly;
-        const NAME: &'static str = "AccessKitSubclassAssociatedObject";
-    }
-
-    impl DeclaredClass for AssociatedObject {
-        type Ivars = AssociatedObjectIvars;
-    }
 );
 
 impl AssociatedObject {
@@ -62,7 +57,7 @@ impl AssociatedObject {
             prev_class,
         });
 
-        unsafe { msg_send_id![super(this), init] }
+        unsafe { msg_send![super(this), init] }
     }
 }
 
@@ -132,7 +127,7 @@ unsafe extern "C" fn accessibility_elements(this: &UIView, _cmd: Sel) -> *mut NS
 unsafe extern "C" fn accessibility_hit_test(
     this: &UIView,
     _cmd: Sel,
-    point: CGPoint,
+    point: NSPoint,
 ) -> *mut AnyObject {
     let Some(associated) = associated_object(this) else {
         let prev_class = prev_class(this);
@@ -174,7 +169,9 @@ fn subclass_of(prev_class: &'static AnyClass) -> &'static AnyClass {
     {
         Some(entry) => entry.1,
         None => {
-            let name = format!("AccessKitSubclassOf{}", prev_class.name());
+            let mut name = b"AccessKitSubclassOf".to_vec();
+            name.extend_from_slice(prev_class.name().to_bytes());
+            let name = CString::new(name).unwrap();
             let mut builder = ClassBuilder::new(&name, prev_class).unwrap();
             unsafe {
                 builder.add_method(
@@ -265,8 +262,8 @@ impl SubclassingAdapter {
             if !std::ptr::eq(reported_class, actual_class) {
                 panic!(
                     "view {view:?} is already observed with key-value observing (its class {} reports itself as {}); create the subclassing adapter before anything observes the view",
-                    actual_class.name(),
-                    reported_class.name()
+                    actual_class.name().to_string_lossy(),
+                    reported_class.name().to_string_lossy()
                 );
             }
         }
